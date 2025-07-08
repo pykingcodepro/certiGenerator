@@ -5,8 +5,7 @@
   "main": "index.js",
   "scripts": {
     "dev": "nodemon index",
-    "start": "node index",
-    "build": "npm install && npm run start"
+    "start": "node index"
   },
   "keywords": [],
   "author": "",
