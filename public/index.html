@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Certificate Generator Editor</title>
+  <style>
+    #canvasWrapper { position: relative; display: inline-block; }
+    #certCanvas { border: 1px solid #ccc; }
+    #draggableName {
+      position: absolute;
+      cursor: move;
+      user-select: none;
+      pointer-events: auto;
+      color: #222;
+      font-weight: bold;
+      background: rgba(255,255,255,0.2);
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+  </style>
+</head>
+<body>
+  <h2>Certificate Generator Editor</h2>
+  <label>Upload Template Image: <input type="file" id="templateInput" accept="image/*"></label><br>
+  <label>Upload CSV File: <input type="file" id="csvInput" accept=".csv"></label><br>
+  <label>Font:
+    <select id="fontFamily">
+      <option value="Arial">Arial</option>
+      <option value="Times New Roman">Times New Roman</option>
+      <option value="Georgia">Georgia</option>
+      <option value="Comic Sans MS">Comic Sans MS</option>
+    </select>
+  </label>
+  <label>Font Size:
+    <input type="number" id="fontSize" value="32" min="10" max="100"> px
+  </label>
+  <br><br>
+  <div id="canvasWrapper">
+    <canvas id="certCanvas" width="800" height="600"></canvas>
+    <div id="draggableName" style="left: 300px; top: 250px; font-size:32px; font-family:Arial;">Sample Name</div>
+  </div>
+  <br>
+  <button id="generateBtn">Generate Certificates</button>
+  <div id="msg"></div>
+
+  <script>
+    const templateInput = document.getElementById('templateInput');
+    const csvInput = document.getElementById('csvInput');
+    const fontFamily = document.getElementById('fontFamily');
+    const fontSize = document.getElementById('fontSize');
+    const certCanvas = document.getElementById('certCanvas');
+    const ctx = certCanvas.getContext('2d');
+    const draggableName = document.getElementById('draggableName');
+    const canvasWrapper = document.getElementById('canvasWrapper');
+    let templateImg = new Image();
+
+    // Load template image
+    templateInput.addEventListener('change', e => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = function(evt) {
+        templateImg.onload = function() {
+          certCanvas.width = templateImg.width;
+          certCanvas.height = templateImg.height;
+          drawCanvas();
+        }
+        templateImg.src = evt.target.result;
+      }
+      reader.readAsDataURL(file);
+    });
+
+    // Update draggable text style
+    function updateDraggableStyle() {
+      draggableName.style.fontFamily = fontFamily.value;
+      draggableName.style.fontSize = fontSize.value + 'px';
+    }
+    fontFamily.addEventListener('change', updateDraggableStyle);
+    fontSize.addEventListener('input', updateDraggableStyle);
+
+    // Drag functionality
+    let isDragging = false, offsetX, offsetY;
+    draggableName.addEventListener('mousedown', function(e) {
+      isDragging = true;
+      offsetX = e.offsetX;
+      offsetY = e.offsetY;
+    });
+    document.addEventListener('mousemove', function(e) {
+      if (!isDragging) return;
+      const rect = canvasWrapper.getBoundingClientRect();
+      let x = e.clientX - rect.left - offsetX;
+      let y = e.clientY - rect.top - offsetY;
+      // Keep within canvas
+      x = Math.max(0, Math.min(x, certCanvas.width - draggableName.offsetWidth));
+      y = Math.max(0, Math.min(y, certCanvas.height - draggableName.offsetHeight));
+      draggableName.style.left = x + 'px';
+      draggableName.style.top = y + 'px';
+    });
+    document.addEventListener('mouseup', function() { isDragging = false; });
+
+    // Draw template and name on canvas
+    function drawCanvas(name = "") {
+      ctx.clearRect(0, 0, certCanvas.width, certCanvas.height);
+      if (templateImg.src) ctx.drawImage(templateImg, 0, 0, certCanvas.width, certCanvas.height);
+      // Draw name at draggable position
+      ctx.font = `${fontSize.value}px ${fontFamily.value}`;
+      ctx.fillStyle = "#222";
+      const x = parseInt(draggableName.style.left, 10);
+      const y = parseInt(draggableName.style.top, 10) + parseInt(fontSize.value, 10);
+      ctx.fillText(name, x, y);
+    }
+
+    // Update preview on drag or font change
+    new MutationObserver(() => drawCanvas()).observe(draggableName, { attributes: true });
+    fontFamily.addEventListener('change', () => drawCanvas());
+    fontSize.addEventListener('input', () => drawCanvas());
+
+    // Generate certificates (send data to backend)
+    document.getElementById('generateBtn').onclick = function() {
+      if (!templateInput.files[0] || !csvInput.files[0]) {
+        alert("Please upload both template and CSV.");
+        return;
+      }
+      // Gather settings
+      const settings = {
+        fontFamily: fontFamily.value,
+        fontSize: fontSize.value,
+        x: parseInt(draggableName.style.left, 10),
+        y: parseInt(draggableName.style.top, 10) + parseInt(fontSize.value, 10)
+      };
+      const formData = new FormData();
+      formData.append('template', templateInput.files[0]);
+      formData.append('csv', csvInput.files[0]);
+      formData.append('settings', JSON.stringify(settings));
+      fetch('/generate-certificates', {
+        method: 'POST',
+        body: formData
+      })
+      .then(async res => {
+        if (!res.ok) {
+          const errorText = await res.text();
+          document.getElementById('msg').textContent = errorText || 'Error generating certificates.';
+          throw new Error(errorText || 'Error generating certificates');
+        }
+        return res.blob();
+      })
+      .then(blob => {
+        // Download the zip file
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'certificates.zip';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        document.getElementById('msg').textContent = 'Certificates generated and downloaded!';
+      })
+      .catch(() => {
+        // Error message already set above
+      });
+    };
+  </script>
+</body>
+</html>
